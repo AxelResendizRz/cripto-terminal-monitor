@@ -106,7 +106,7 @@ const updatePrices = async () => {
 setInterval(updatePrices, 20000);
 
 // Primera ejecución al iniciar el servidor
-updatePrices();
+// updatePrices();
 
 // ─────────────────────────────────────────────────────────────
 // 🌐 GET /api/prices
@@ -171,6 +171,9 @@ app.get("/api/prices", async (req, res) => {
 // ─────────────────────────────────────────────────────────────
 // 🚀 Inicio del servidor
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, "0.0.0.0", () => {
-  console.log(`✅ Server running on port ${PORT}`);
+
+updatePrices().then(() => {
+  app.listen(PORT, "0.0.0.0", () => {
+    console.log(`✅ Server running on port ${PORT}`);
+  });
 });
