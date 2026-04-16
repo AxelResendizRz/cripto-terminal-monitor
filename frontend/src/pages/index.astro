@@ -1,5 +1,4 @@
 ---
-// src/pages/index.astro
 import "../styles/global.css";
 import Header from "../components/layout/Header.astro";
 import Footer from "../components/layout/Footer.astro";
@@ -20,11 +19,12 @@ interface CoinData {
     history: PriceEntry[];
 }
 
+const API_URL = import.meta.env.PUBLIC_API_URL || "http://localhost:3000";
 let prices: Record<string, CoinData> = {};
 let error = null;
 
 try {
-    const response = await fetch("http://crypto-backend:3000/api/prices");
+    const response = await fetch(`${API_URL}/api/prices`);
     if (response.ok) {
         prices = await response.json();
     } else {
@@ -54,8 +54,6 @@ const defaultCoin = Object.keys(prices)[0] || "bitcoin";
                 </div>
             ) : (
                 <div class="grid grid-cols-1 xl:grid-cols-4 gap-6 flex-1 min-h-0">
-                    
-                    <!-- Card principal -->
                     <div class="xl:col-span-3 bg-[#0d0d0d] border border-zinc-800/50 p-6 md:p-8 rounded-xl relative overflow-hidden flex flex-col min-h-0">
                         <div class="absolute -inset-px bg-gradient-to-br from-cyan-500/5 to-transparent opacity-50"></div>
 
@@ -92,8 +90,6 @@ const defaultCoin = Object.keys(prices)[0] || "bitcoin";
                                     {Math.abs(prices[defaultCoin]?.change_24h).toFixed(2)}%
                                 </div>
                             </div>
-
-                            <!-- Stats -->
                             <div class="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-6 md:mb-8 pt-6 border-t border-zinc-800/60">
                                 <div>
                                     <p class="text-[9px] text-zinc-600 uppercase mb-1">Market Cap</p>
@@ -112,7 +108,6 @@ const defaultCoin = Object.keys(prices)[0] || "bitcoin";
                                             : "—"}
                                     </p>
                                 </div>
-
                                 <div>
                                     <p class="text-[9px] text-zinc-600 uppercase mb-1">High 24h</p>
                                     <p class="text-xs font-mono text-zinc-400">
@@ -124,7 +119,6 @@ const defaultCoin = Object.keys(prices)[0] || "bitcoin";
                                             : "—"}
                                     </p>
                                 </div>
-
                                 <div>
                                     <p class="text-[9px] text-zinc-600 uppercase mb-1">Low 24h</p>
                                     <p class="text-xs font-mono text-zinc-400">
@@ -137,13 +131,9 @@ const defaultCoin = Object.keys(prices)[0] || "bitcoin";
                                     </p>
                                 </div>
                             </div>
-
-                            <!-- Chart -->
                             <div class="flex-1 min-h-[250px] md:min-h-0">
                                 <canvas id="main-chart"></canvas>
                             </div>
-
-                            <!-- Status -->
                             <div class="flex items-center gap-2 mt-4">
                                 <div class="w-1.5 h-1.5 rounded-full bg-cyan-500 animate-pulse"></div>
                                 <p class="text-[9px] text-zinc-600 uppercase">
@@ -152,8 +142,6 @@ const defaultCoin = Object.keys(prices)[0] || "bitcoin";
                             </div>
                         </div>
                     </div>
-
-                    <!-- Sidebar -->
                     <div class="space-y-3 md:overflow-y-auto md:min-h-0">
                         <h3 class="text-zinc-600 text-[10px] uppercase tracking-[0.3em] font-bold pl-2 mb-4">
                             Activos Disponibles
@@ -200,7 +188,6 @@ const defaultCoin = Object.keys(prices)[0] || "bitcoin";
                 </div>
             )
         }
-
         <Footer class="shrink-0" />
     </main>
 </Layout>
