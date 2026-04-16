@@ -32,7 +32,7 @@ redisClient.connect().catch(console.error);
 // ─────────────────────────────────────────────────────────────
 // ⚙️ Configuración del sistema
 // ─────────────────────────────────────────────────────────────
-const COINS = ["bitcoin", "ethereum", "solana", "cardano"];
+const COINS = ["bitcoin", "ethereum", "solana", "cardano", "binancecoin", "ripple"];
 const HISTORY_LIMIT = 30; // Máximo de puntos almacenados por activo
 
 // ─────────────────────────────────────────────────────────────
