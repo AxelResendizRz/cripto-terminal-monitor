@@ -1,12 +1,17 @@
-// ─────────────────────────────────────────────────────────────
-// 📦 Backend - Crypto Price Service
-// Autor: Arz.Dev
-// Descripción:
-// Servicio encargado de:
-// 1. Obtener precios de criptomonedas desde CoinGecko
-// 2. Persistir historial en Redis (para gráficas)
-// 3. Exponer endpoint REST para consumo del frontend
-// ─────────────────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════════════════════
+// Crypto Price Service — Backend API
+// Autor  : Arz.Dev
+// Stack  : Node.js · Express · Redis · CoinGecko API
+//
+// Responsabilidades:
+//   1. Polling a CoinGecko cada 20s para obtener precios de mercado
+//   2. Persistir historial de precios en Redis (estructura de lista)
+//   3. Cachear estadísticas actuales en Redis (estructura de string/JSON)
+//   4. Exponer endpoint REST consumido por el frontend en Astro/Vercel
+//
+// Flujo de datos:
+//   CoinGecko API → updatePrices() → Redis → GET /api/prices → Frontend
+// ═══════════════════════════════════════════════════════════════════════════════
 
 const express = require("express");
 const axios = require("axios");
@@ -16,22 +21,30 @@ const cors = require("cors");
 const app = express();
 app.use(cors());
 
-// ─────────────────────────────────────────────────────────────
-// 🔌 Configuración de Redis
-// Usa variable de entorno para soportar Docker / local
-// ─────────────────────────────────────────────────────────────
+// ───────────────────────────────────────────────────────────────────────────────
+// Redis Client
+//
+// Prioridad de conexión:
+//   1. REDIS_URL  → cadena completa (Railway, Render, etc.)
+//   2. REDIS_HOST → host personalizado con puerto default 6379
+//   3. localhost  → entorno local / Docker Compose
+// ───────────────────────────────────────────────────────────────────────────────
 const redisClient = redis.createClient({
   url:
     process.env.REDIS_URL ||
     `redis://${process.env.REDIS_HOST || "localhost"}:6379`,
 });
 
-// Conexión inicial a Redis
 redisClient.connect().catch(console.error);
 
-// ─────────────────────────────────────────────────────────────
-// ⚙️ Configuración del sistema
-// ─────────────────────────────────────────────────────────────
+// ───────────────────────────────────────────────────────────────────────────────
+// Configuración de activos
+//
+// COINS        : IDs exactos según la API de CoinGecko
+// DISPLAY_NAMES: Ticker visible en el frontend (no expuesto por CoinGecko Markets)
+// HISTORY_LIMIT: Máximo de snapshots por activo en Redis (ventana deslizante)
+//                Con polling de 20s → 30 puntos = ~10 minutos de historial
+// ───────────────────────────────────────────────────────────────────────────────
 const COINS = [
   "bitcoin",
   "ethereum",
@@ -40,142 +53,156 @@ const COINS = [
   "binancecoin",
   "ripple",
 ];
-const HISTORY_LIMIT = 30; // Máximo de puntos almacenados por activo
 
-// ─────────────────────────────────────────────────────────────
-// 🔄 updatePrices()
-// Obtiene precios actuales desde CoinGecko y los guarda en Redis
+const DISPLAY_NAMES = {
+  bitcoin:     "BTC",
+  ethereum:    "ETH",
+  solana:      "SOL",
+  cardano:     "ADA",
+  binancecoin: "BNB",
+  ripple:      "XRP",
+};
+
+const HISTORY_LIMIT = 30;
+
+// ───────────────────────────────────────────────────────────────────────────────
+// updatePrices()
 //
-// Estructura en Redis:
-// - history:<coin> → Lista (LPUSH) de precios recientes
+// Consulta el endpoint /coins/markets de CoinGecko con todos los activos
+// en una sola request (batch), luego persiste en Redis dos estructuras:
 //
-// Cada entrada:
-// {
-//   price: number,
-//   timestamp: number (ms)
-// }
-// ─────────────────────────────────────────────────────────────
+//   history:<coinId>  →  Lista  (LPUSH + LTRIM)
+//     Cada elemento: JSON { price: number, timestamp: ms }
+//     LPUSH inserta al frente → el índice 0 siempre es el más reciente
+//     LTRIM mantiene la lista acotada a HISTORY_LIMIT elementos
+//
+//   stats:<coinId>    →  String (SET, sobreescritura total)
+//     JSON con el snapshot completo: precio, variación, cap, volumen, high, low
+//     Se sobreescribe en cada ciclo — no acumula, solo el estado actual
+//
+// Nota: esta función es async y se usa tanto en el scheduler (setInterval)
+// como en el arranque del servidor (.then(() => app.listen(...)))
+// ───────────────────────────────────────────────────────────────────────────────
 const updatePrices = async () => {
   try {
-    const ids = COINS.join(",");
-
-    // Llamada a CoinGecko (datos de mercado)
     const response = await axios.get(
-      `https://api.coingecko.com/api/v3/coins/markets`,
+      "https://api.coingecko.com/api/v3/coins/markets",
       {
         params: {
           vs_currency: "usd",
-          ids,
+          ids: COINS.join(","),
           price_change_percentage: "24h",
         },
-      },
+      }
     );
 
-    const data = response.data;
-
-    // Iteración sobre cada criptomoneda
-    for (const coin of data) {
-      const coinId = coin.id;
-      const price = coin.current_price;
+    for (const coin of response.data) {
+      const { id: coinId, current_price: price } = coin;
       const timestamp = Date.now();
 
-      // ── 1. Guardar historial (para la gráfica) ──
-      const historyEntry = JSON.stringify({ price, timestamp });
-      await redisClient.lPush(`history:${coinId}`, historyEntry);
+      // Historial — ventana deslizante de HISTORY_LIMIT puntos
+      await redisClient.lPush(`history:${coinId}`, JSON.stringify({ price, timestamp }));
       await redisClient.lTrim(`history:${coinId}`, 0, HISTORY_LIMIT - 1);
 
-      // ── 2. NUEVO: Guardar estadísticas actuales (PARA LLENAR LOS ESPACIOS VACÍOS) ──
-      const stats = {
-        usd: price,
-        high_24h: coin.high_24h,
-        low_24h: coin.low_24h,
-        market_cap: coin.market_cap,
-        total_volume: coin.total_volume,
-        change_24h: coin.price_change_percentage_24h,
-      };
-
-      // Guardamos esto como un string simple en Redis con una llave única por moneda
-      await redisClient.set(`stats:${coinId}`, JSON.stringify(stats));
+      // Snapshot actual — sobreescritura en cada ciclo
+      await redisClient.set(
+        `stats:${coinId}`,
+        JSON.stringify({
+          usd:          price,
+          high_24h:     coin.high_24h,
+          low_24h:      coin.low_24h,
+          market_cap:   coin.market_cap,
+          total_volume: coin.total_volume,
+          change_24h:   coin.price_change_percentage_24h,
+        })
+      );
     }
 
-    console.log(
-      `[${new Date().toLocaleTimeString()}] Redis actualizado (${COINS.length} activos)`,
-    );
+    console.log(`[${new Date().toLocaleTimeString()}] ✅ Redis actualizado — ${COINS.length} activos`);
   } catch (error) {
-    console.error("❌ Error actualizando precios:", error.message);
+    console.error(`[${new Date().toLocaleTimeString()}] ❌ Error en updatePrices:`, error.message);
   }
 };
 
-// ─────────────────────────────────────────────────────────────
-// ⏱️ Scheduler
-// Ejecuta la actualización cada 20 segundos
-// ─────────────────────────────────────────────────────────────
-setInterval(updatePrices, 20000);
-
-// Primera ejecución al iniciar el servidor
-// updatePrices();
-
-// ─────────────────────────────────────────────────────────────
-// 🌐 GET /api/prices
+// ───────────────────────────────────────────────────────────────────────────────
+// Scheduler — polling cada 20 segundos
 //
-// Retorna:
-// {
-//   bitcoin: {
-//     usd: number,
-//     history: [{ x: timestamp, y: price }],
-//     change_24h: number
-//   }
+// Se registra antes del primer arranque para que el intervalo quede activo
+// desde el momento en que el servidor empieza a aceptar conexiones.
+// ───────────────────────────────────────────────────────────────────────────────
+setInterval(updatePrices, 20_000);
+
+// ───────────────────────────────────────────────────────────────────────────────
+// GET /api/prices
+//
+// Respuesta: Record<coinId, CoinPayload>
+//
+// CoinPayload {
+//   usd          : number   — precio actual en USD
+//   name         : string   — ticker display (BTC, ETH, ...)
+//   history      : Array<{ x: timestamp_ms, y: price }>  — orden cronológico ASC
+//   high_24h     : number
+//   low_24h      : number
+//   market_cap   : number
+//   total_volume : number
+//   change_24h   : number   — variación porcentual 24h (real, desde CoinGecko)
 // }
 //
-// Notas:
-// - history se invierte para orden cronológico
-// - change_24h es calculado localmente (no es exacto real)
-// ─────────────────────────────────────────────────────────────
+// Una coin solo se incluye en la respuesta si ya existe su snapshot en Redis
+// (stats:<coinId>). El historial puede estar vacío en el primer ciclo — el
+// frontend maneja ese caso sin romper la UI.
+// ───────────────────────────────────────────────────────────────────────────────
 app.get("/api/prices", async (req, res) => {
   try {
-    let result = {};
+    const result = {};
 
     for (const coin of COINS) {
-      // 1. Obtener historial (para la gráfica)
+      // Historial: almacenado con LPUSH (más reciente al frente) → invertir para ASC
       const rawHistory = await redisClient.lRange(`history:${coin}`, 0, -1);
-
       const history = rawHistory
         .map((entry) => {
-          const parsed = JSON.parse(entry);
-          return { x: Number(parsed.timestamp), y: Number(parsed.price) };
+          const { price, timestamp } = JSON.parse(entry);
+          return { x: Number(timestamp), y: Number(price) };
         })
         .reverse();
 
-      // 2. NUEVO: Obtener las estadísticas guardadas por updatePrices
+      // Stats: puede ser null si el servidor acaba de arrancar y aún no completó
+      // el primer updatePrices() — en ese caso se omite la coin del resultado
       const rawStats = await redisClient.get(`stats:${coin}`);
-      const stats = rawStats ? JSON.parse(rawStats) : null;
+      if (!rawStats) continue;
 
-      if (stats) {
-        result[coin] = {
-          usd: stats.usd,
-          history: history,
-          high_24h: stats.high_24h,
-          low_24h: stats.low_24h,
-          market_cap: stats.market_cap,
-          total_volume: stats.total_volume,
-          change_24h: stats.change_24h,
-        };
-      }
+      const stats = JSON.parse(rawStats);
+
+      result[coin] = {
+        usd:          stats.usd,
+        name:         DISPLAY_NAMES[coin] || coin.toUpperCase(),
+        history,
+        high_24h:     stats.high_24h,
+        low_24h:      stats.low_24h,
+        market_cap:   stats.market_cap,
+        total_volume: stats.total_volume,
+        change_24h:   stats.change_24h,
+      };
     }
 
     res.json(result);
   } catch (error) {
-    console.error("❌ Error en /api/prices:", error.message);
-    res.status(500).json({ error: error.message });
+    console.error(`[${new Date().toLocaleTimeString()}] ❌ Error en GET /api/prices:`, error.message);
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 
-// ─────────────────────────────────────────────────────────────
-// 🚀 Inicio del servidor
+// ───────────────────────────────────────────────────────────────────────────────
+// Bootstrap
+//
+// Se ejecuta updatePrices() antes de abrir el puerto para garantizar que Redis
+// tenga datos en el primer request. Sin esto, el frontend recibiría un objeto
+// vacío {} en el SSR de Astro y mostraría el estado de error.
+// ───────────────────────────────────────────────────────────────────────────────
 const PORT = process.env.PORT || 3000;
 
 updatePrices().then(() => {
   app.listen(PORT, "0.0.0.0", () => {
-    console.log(`✅ Server running on port ${PORT}`);
+    console.log(`🚀 Server listening on port ${PORT}`);
   });
 });

@@ -11,6 +11,7 @@ interface PriceEntry {
 
 interface CoinData {
   usd: number;
+  name: string;
   change_24h: number;
   high_24h: number;
   low_24h: number;
@@ -68,7 +69,8 @@ const defaultCoin = Object.keys(prices)[0] || "bitcoin";
                     id="main-coin-name"
                     class="text-zinc-400 text-xs uppercase tracking-[0.3em] font-bold mb-2"
                   >
-                    {defaultCoin} / USD
+                    {prices[defaultCoin]?.name || defaultCoin.toUpperCase()} /
+                    USD
                   </h2>
 
                   <p
@@ -178,6 +180,7 @@ const defaultCoin = Object.keys(prices)[0] || "bitcoin";
               <button
                 class="coin-selector cursor-pointer w-full text-left bg-[#0d0d0d] border border-zinc-800/50 p-4 md:p-5 rounded-xl hover:border-cyan-500/30 transition"
                 data-coin={name}
+                data-name={data.name || name.toUpperCase()}
                 data-price={data.usd}
                 data-change={data.change_24h}
                 data-high={data.high_24h}
@@ -189,7 +192,7 @@ const defaultCoin = Object.keys(prices)[0] || "bitcoin";
                 <div class="flex justify-between items-center">
                   <div>
                     <span class="text-zinc-400 text-[10px] uppercase block mb-1">
-                      {name}
+                      {data.name || name.toUpperCase()}
                     </span>
 
                     <p class="text-lg md:text-xl font-light">
