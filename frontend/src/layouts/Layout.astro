@@ -1,0 +1,307 @@
+---
+import "../styles/global.css";
+
+// Definimos la URL base. En desarrollo usará localhost, 
+// en producción usará la que configures en Vercel.
+const API_URL = import.meta.env.PUBLIC_API_URL || "http://localhost:3000";
+---
+
+<html lang="es">
+    <head>
+        <meta charset="utf-8" />
+        <title>Arz.Dev | Terminal de Activos</title>
+        <link
+            href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600&display=swap"
+            rel="stylesheet"
+        />
+        <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+        <script
+            src="https://cdn.jsdelivr.net/npm/date-fns@2.30.0/dist/date-fns.min.js"
+        ></script>
+        <script
+            src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3.0.0/dist/chartjs-adapter-date-fns.bundle.min.js"
+        ></script>
+    </head>
+
+    <body
+        class="bg-[#050505] text-zinc-100 font-['Inter'] antialiased selection:bg-cyan-500/30"
+    >
+        <slot />
+        
+        <script is:inline define:vars={{ API_URL }}>
+            let mainChart = null;
+            let currentCoin = null;
+
+            // ── Formato de precio inteligente ──────────────────────────────
+            function fmt(n) {
+                const decimals = n < 1 ? 4 : 2;
+                return new Intl.NumberFormat("en-US", {
+                    minimumFractionDigits: decimals,
+                    maximumFractionDigits: decimals,
+                }).format(n);
+            }
+
+            function fmtCompact(n) {
+                if (!n) return "—";
+                if (n >= 1e12) return "$" + (n / 1e12).toFixed(2) + "T";
+                if (n >= 1e9) return "$" + (n / 1e9).toFixed(2) + "B";
+                if (n >= 1e6) return "$" + (n / 1e6).toFixed(2) + "M";
+                return "$" + fmt(n);
+            }
+
+            // ── Gráfica ────────────────────────────────────────────────────
+            function initChart(data) {
+                const canvas = document.getElementById("main-chart");
+                if (!canvas) return;
+                const ctx = canvas.getContext("2d");
+
+                if (mainChart) {
+                    mainChart.data.datasets[0].data = data;
+                    mainChart.update("none");
+                } else {
+                    mainChart = new Chart(ctx, {
+                        type: "line",
+                        data: {
+                            datasets: [
+                                {
+                                    data: data,
+                                    borderColor: "#06b6d4",
+                                    borderWidth: 1.5,
+                                    pointRadius: 0,
+                                    pointHoverRadius: 4,
+                                    pointHoverBackgroundColor: "#06b6d4",
+                                    tension: 0.3,
+                                    fill: true,
+                                    backgroundColor: "rgba(6, 182, 212, 0.07)",
+                                },
+                            ],
+                        },
+                        options: {
+                            responsive: true,
+                            maintainAspectRatio: false,
+                            interaction: { mode: "index", intersect: false },
+                            plugins: {
+                                legend: { display: false },
+                                tooltip: {
+                                    backgroundColor: "#0d0d0d",
+                                    borderColor: "#27272a",
+                                    borderWidth: 1,
+                                    titleColor: "#71717a",
+                                    bodyColor: "#f4f4f5",
+                                    padding: 10,
+                                    callbacks: {
+                                        label: (ctx) =>
+                                            " $" + fmt(ctx.parsed.y),
+                                    },
+                                },
+                            },
+                            scales: {
+                                x: {
+                                    type: "time",
+                                    time: { unit: "minute" },
+                                    grid: { color: "#ffffff06" },
+                                    ticks: {
+                                        color: "#52525b",
+                                        font: { size: 10 },
+                                    },
+                                },
+                                y: {
+                                    grace: "5%",
+                                    grid: { color: "#ffffff06" },
+                                    ticks: {
+                                        color: "#52525b",
+                                        font: { size: 10 },
+                                        callback: (v) => "$" + fmt(v),
+                                    },
+                                },
+                            },
+                        },
+                    });
+                }
+            }
+
+            // ── Actualizar UI del activo seleccionado ──────────────────────
+            function updateMainPanel(
+                coin,
+                price,
+                change,
+                high,
+                low,
+                cap,
+                vol,
+                history,
+            ) {
+                document.getElementById("main-coin-name").textContent =
+                    coin.toUpperCase() + " / USD";
+
+                document.getElementById("main-coin-price").innerHTML =
+                    `<span class="text-zinc-600 text-3xl">$</span>${fmt(Number(price))}`;
+
+                const changeEl = document.getElementById("main-coin-change");
+                const changeVal = Number(change);
+                changeEl.className = `text-sm font-mono p-2 rounded ${changeVal >= 0 ? "bg-green-500/10 text-green-400" : "bg-red-500/10 text-red-400"}`;
+                changeEl.textContent = `${changeVal >= 0 ? "▲" : "▼"} ${Math.abs(changeVal).toFixed(2)}%`;
+
+                const statsEl = document.getElementById("main-coin-stats");
+                if (statsEl) {
+                    statsEl.innerHTML = `
+                        <div>
+                            <p class="text-[9px] text-zinc-600 uppercase tracking-[0.2em] mb-1">Market Cap</p>
+                            <p class="text-xs font-mono text-zinc-400">${fmtCompact(Number(cap))}</p>
+                        </div>
+                        <div>
+                            <p class="text-[9px] text-zinc-600 uppercase tracking-[0.2em] mb-1">Vol. 24h</p>
+                            <p class="text-xs font-mono text-zinc-400">${fmtCompact(Number(vol))}</p>
+                        </div>
+                        <div>
+                            <p class="text-[9px] text-zinc-600 uppercase tracking-[0.2em] mb-1">High 24h</p>
+                            <p class="text-xs font-mono text-zinc-400">$${fmt(Number(high))}</p>
+                        </div>
+                        <div>
+                            <p class="text-[9px] text-zinc-600 uppercase tracking-[0.2em] mb-1">Low 24h</p>
+                            <p class="text-xs font-mono text-zinc-400">$${fmt(Number(low))}</p>
+                        </div>
+                    `;
+                }
+
+                initChart(history);
+            }
+
+            // ── Marcar activo activo en sidebar ────────────────────────────
+            function setActiveCoin(activeName) {
+                document.querySelectorAll(".coin-selector").forEach((btn) => {
+                    const bar = btn.querySelector(".coin-active-bar");
+                    if (btn.dataset.coin === activeName) {
+                        btn.classList.add("border-cyan-500/40", "bg-[#0f1617]");
+                        btn.classList.remove("border-zinc-800/50");
+                        if (bar) bar.style.width = "2px";
+                        if (bar) bar.style.background = "#06b6d4";
+                    } else {
+                        btn.classList.remove(
+                            "border-cyan-500/40",
+                            "bg-[#0f1617]",
+                        );
+                        btn.classList.add("border-zinc-800/50");
+                        if (bar) bar.style.width = "0px";
+                    }
+                });
+            }
+
+            // ── Indicador de carga ─────────────────────────────────────────
+            function setRefreshing(loading) {
+                const dot = document.getElementById("live-dot");
+                const status = document.getElementById("live-status");
+                const timer = document.getElementById("sync-timer");
+                if (loading) {
+                    if (dot) dot.style.background = "#f59e0b";
+                    if (status) status.textContent = "Sincronizando...";
+                    if (timer) timer.style.opacity = "0.4";
+                } else {
+                    if (dot) dot.style.background = "#06b6d4";
+                    if (status)
+                        status.textContent = "Actualizando en tiempo real";
+                    if (timer) timer.style.opacity = "1";
+                }
+            }
+
+            // ── Fetch de datos frescos ─────────────────────────────────────
+            async function refreshData() {
+                setRefreshing(true);
+                try {
+                    // Usamos la API_URL definida arriba
+                    const response = await fetch(`${API_URL}/api/prices`)
+                    const prices = await response.json();
+
+                    // Actualizar panel principal
+                    if (prices[currentCoin]) {
+                        const d = prices[currentCoin];
+                        updateMainPanel(
+                            currentCoin,
+                            d.usd,
+                            d.change_24h,
+                            d.high_24h,
+                            d.low_24h,
+                            d.market_cap,
+                            d.total_volume,
+                            d.history,
+                        );
+                    }
+
+                    // Actualizar precios en sidebar
+                    Object.entries(prices).forEach(([name, data]) => {
+                        const btn = document.querySelector(
+                            `[data-coin="${name}"]`,
+                        );
+                        if (!btn) return;
+                        btn.dataset.history = JSON.stringify(data.history);
+                        btn.dataset.price = data.usd;
+                        btn.dataset.change = data.change_24h;
+                        btn.dataset.high = data.high_24h;
+                        btn.dataset.low = data.low_24h;
+                        btn.dataset.cap = data.market_cap;
+                        btn.dataset.vol = data.total_volume;
+
+                        const priceLabel =
+                            btn.querySelector(".coin-price-label");
+                        if (priceLabel) {
+                            priceLabel.innerHTML = `<span class="text-zinc-600 text-base">$</span>${fmt(Number(data.usd))}`;
+                        }
+                    });
+                } catch (e) {
+                    console.error("Error en auto-update:", e);
+                } finally {
+                    setRefreshing(false);
+                }
+            }
+
+            // ── Init ───────────────────────────────────────────────────────
+            window.addEventListener("load", () => {
+                const selectors = document.querySelectorAll(".coin-selector");
+
+                if (selectors.length > 0) {
+                    const first = selectors[0];
+                    currentCoin = first.dataset.coin;
+                    setActiveCoin(currentCoin);
+                    initChart(JSON.parse(first.dataset.history));
+                }
+
+                selectors.forEach((btn) => {
+                    btn.addEventListener("click", () => {
+                        currentCoin = btn.dataset.coin;
+                        setActiveCoin(currentCoin);
+                        updateMainPanel(
+                            currentCoin,
+                            btn.dataset.price,
+                            btn.dataset.change,
+                            btn.dataset.high,
+                            btn.dataset.low,
+                            btn.dataset.cap,
+                            btn.dataset.vol,
+                            JSON.parse(btn.dataset.history),
+                        );
+                    });
+                });
+
+                // ── Timer unificado (1 intervalo para todo) ────────────────
+                const TOTAL = 20;
+                let timeLeft = TOTAL;
+
+                const timerText = document.getElementById("sync-timer");
+                const timerBar = document.getElementById("sync-bar");
+
+                setInterval(() => {
+                    timeLeft--;
+
+                    if (timerText) timerText.textContent = `${timeLeft}s`;
+                    if (timerBar)
+                        timerBar.style.width = `${(timeLeft / TOTAL) * 100}%`;
+
+                    if (timeLeft <= 0) {
+                        timeLeft = TOTAL;
+                        refreshData();
+                    }
+                }, 1000);
+            });
+        </script>
+    </body>
+</html>

@@ -1,0 +1,39 @@
+<!-- Header -->
+
+<header
+    class="mb-12 border-l-2 border-cyan-500 pl-6 flex justify-between items-end"
+>
+    <div class="text-right hidden md:block">
+        <p class="text-[10px] text-zinc-500 uppercase tracking-widest mb-1">
+            Próxima actualización
+        </p>
+        <div class="flex items-center justify-end gap-3">
+            <span id="sync-timer" class="text-xs font-mono text-cyan-500/80"
+                >20s</span
+            >
+            <div class="w-20 h-[2px] bg-zinc-800 rounded-full overflow-hidden">
+                <div
+                    id="sync-bar"
+                    class="h-full bg-cyan-500 transition-all duration-1000 ease-linear"
+                    style="width: 100%"
+                >
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div>
+        <h1
+            class="text-[10px] uppercase tracking-[0.5em] text-cyan-500 font-bold mb-1"
+        >
+            Arz.Dev Infrastructure
+        </h1>
+        <p class="text-3xl font-extralight tracking-tight">
+            Market <span class="text-zinc-500 italic">Terminal v3</span>
+        </p>
+    </div>
+
+    <div class="text-right text-xs text-zinc-600 font-mono hidden md:block">
+        Node: WSL2_Docker | Status: Operational
+    </div>
+</header>

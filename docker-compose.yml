@@ -1,0 +1,38 @@
+services:
+  crypto-backend:
+    build: ./backend
+    container_name: crypto-backend
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./backend:/app          
+      - /app/node_modules
+    depends_on:
+      - redis
+    environment:
+      - REDIS_HOST=redis
+    networks:
+      - crypto-network
+
+  crypto-frontend:
+    build: ./frontend
+    container_name: crypto-frontend
+    ports:
+      - "4321:4321"
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    networks:
+      - crypto-network
+
+  redis:
+    image: redis:alpine
+    container_name: crypto-redis
+    ports:
+      - "6379:6379"
+    networks:
+      - crypto-network
+
+networks:
+  crypto-network:
+    driver: bridge
