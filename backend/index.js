@@ -32,7 +32,14 @@ redisClient.connect().catch(console.error);
 // ─────────────────────────────────────────────────────────────
 // ⚙️ Configuración del sistema
 // ─────────────────────────────────────────────────────────────
-const COINS = ["bitcoin", "ethereum", "solana", "cardano", "binancecoin", "ripple"];
+const COINS = [
+  "bitcoin",
+  "ethereum",
+  "solana",
+  "cardano",
+  "binancecoin",
+  "ripple",
+];
 const HISTORY_LIMIT = 30; // Máximo de puntos almacenados por activo
 
 // ─────────────────────────────────────────────────────────────
@@ -143,20 +150,15 @@ app.get("/api/prices", async (req, res) => {
       const rawStats = await redisClient.get(`stats:${coin}`);
       const stats = rawStats ? JSON.parse(rawStats) : null;
 
-      if (history.length > 0) {
-        // Usamos los stats de Redis, y si no existen (primer inicio), usamos el último precio del historial
-        const latestPrice = stats ? stats.usd : history[history.length - 1].y;
-
+      if (stats) {
         result[coin] = {
-          usd: latestPrice,
+          usd: stats.usd,
           history: history,
-          // Pasamos los datos técnicos al frontend
-          high_24h: stats ? stats.high_24h : 0,
-          low_24h: stats ? stats.low_24h : 0,
-          market_cap: stats ? stats.market_cap : 0,
-          total_volume: stats ? stats.total_volume : 0,
-          // Puedes usar el cambio real de CoinGecko que guardamos en stats
-          change_24h: stats ? stats.change_24h : 0,
+          high_24h: stats.high_24h,
+          low_24h: stats.low_24h,
+          market_cap: stats.market_cap,
+          total_volume: stats.total_volume,
+          change_24h: stats.change_24h,
         };
       }
     }
